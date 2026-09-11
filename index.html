@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Our Money</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7f5;color:#17231b}
+.container{max-width:1100px;margin:auto;padding:22px}
+header{margin-bottom:20px}
+h1{margin:0;color:#16834a;font-size:30px}
+header p{margin:5px 0 0;color:#607064}
+.card{background:white;border-radius:15px;padding:20px;margin-bottom:18px;box-shadow:0 2px 12px rgba(0,0,0,.07)}
+h2{margin:0 0 15px}
+.balance-card{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}
+.balance-label{color:#607064}
+.balance{font-size:30px;font-weight:bold;margin-top:5px}
+.buttons{display:flex;gap:10px;flex-wrap:wrap}
+button,.button-link{border:0;border-radius:9px;padding:12px 18px;font-size:15px;cursor:pointer;text-decoration:none;display:inline-block;text-align:center}
+.in-btn{background:#16834a;color:white}
+.out-btn{background:#d85b5b;color:white}
+.shop-btn{background:#168c8c;color:white}
+.cancel-btn{background:#e9eeeb;color:#26352c}
+form{display:grid;gap:12px}
+label{font-weight:600}
+input,select{width:100%;padding:11px;border:1px solid #ccd7cf;border-radius:8px;font-size:15px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-actions{display:flex;gap:10px}
+.form-actions button{flex:1}
+.hidden{display:none}
+.message{padding:10px;border-radius:8px;background:#f1f7f3;margin-bottom:12px;display:none}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:760px}
+th,td{text-align:left;padding:12px;border-bottom:1px solid #e5ebe7}
+th{background:#f1f5f2}
+.in-text{font-weight:600}
+.out-text{font-weight:600}
+.loading{text-align:center;padding:20px;color:#68756d}
+@media(max-width:650px){
+ .container{padding:12px}
+ .form-grid{grid-template-columns:1fr}
+ .balance-card{display:block}
+ .buttons{margin-top:15px}
+ .buttons button,.button-link{width:100%}
+ .form-actions{flex-direction:column}
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<header>
+  <h1>💚 Our Money</h1>
+  <p>Shared with my honey IKRAM ❤️</p>
+</header>
+
+<section class="card balance-card">
+  <div>
+    <div class="balance-label">Current Balance</div>
+    <div class="balance"><span id="balance">0</span> DA</div>
+  </div>
+
+  <div class="buttons">
+    <button class="in-btn" onclick="openTransaction('in')">＋ Money In</button>
+    <button class="out-btn" onclick="openTransaction('out')">− Money Out</button>
+    <a class="button-link shop-btn" href="shopping.html">🛒 Shopping</a>
+  </div>
+</section>
+
+<section class="card hidden" id="transactionCard">
+  <h2 id="formTitle">Money In</h2>
+
+  <div class="message" id="message"></div>
+
+  <form id="transactionForm">
+    <div class="form-grid">
+      <div>
+        <label>Amount (DA)</label>
+        <input id="amount" type="number" min="0.01" step="0.01" required>
+      </div>
+
+      <div>
+        <label>Date</label>
+        <input id="date" type="date" required>
+      </div>
+    </div>
+
+    <div>
+      <label>Description</label>
+      <input id="description" type="text" placeholder="Salary, groceries, etc." required>
+    </div>
+
+    <div>
+      <label>Added by</label>
+      <select id="person" required>
+        <option value="You">You</option>
+        <option value="IKRAM">IKRAM</option>
+      </select>
+    </div>
+
+    <div class="form-actions">
+      <button id="saveBtn" class="in-btn" type="submit">Save</button>
+      <button class="cancel-btn" type="button" onclick="closeTransaction()">Cancel</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Transactions</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th>In</th>
+          <th>Out</th>
+          <th>Balance</th>
+          <th>Added by</th>
+        </tr>
+      </thead>
+
+      <tbody id="rows">
+        <tr>
+          <td colspan="6" class="loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</div>
+
+<script>
+const API_URL =
+"https://script.google.com/macros/s/AKfycbwGHEXx7sLs96cJ1gNH_XkKuPDGz1WmrPKgZuowjos0cppG-5cH8VGHp09k93KnfPrQ/exec";
+
+let transactions = [];
+let transactionType = "in";
+
+const $ = id => document.getElementById(id);
+
+const money = n => Number(n || 0).toLocaleString("en-US", {
+  maximumFractionDigits: 2
+});
+
+
+/* =========================
+   LOAD GOOGLE SHEETS
+========================= */
+
+function loadData() {
+
+  return new Promise((resolve, reject) => {
+
+    const callbackName =
+      "ourMoneyCallback_" + Date.now();
+
+    window[callbackName] = function(data) {
+
+      delete window[callbackName];
+
+      const oldScript =
+        document.getElementById(callbackName);
+
+      if (oldScript) oldScript.remove();
+
+      if (!data || !data.success) {
+        reject(
+          new Error(
+            (data && data.error) ||
+            "Could not load Google Sheets."
+          )
+        );
+        return;
+      }
+
+      transactions =
+        data.transactions || [];
+
+      renderTransactions();
+
+      resolve(data);
+    };
+
+
+    const script =
+      document.createElement("script");
+
+    script.id = callbackName;
+
+    script.src =
+      API_URL +
+      "?callback=" +
+      callbackName +
+      "&t=" +
+      Date.now();
+
+    script.onerror = function() {
+
+      delete window[callbackName];
+
+      script.remove();
+
+      reject(
+        new Error(
+          "Could not connect to Google Sheets."
+        )
+      );
+    };
+
+    document.body.appendChild(script);
+  });
+}
+
+
+/* =========================
+   TRANSACTIONS TABLE
+========================= */
+
+function renderTransactions() {
+
+  const rows = $("rows");
+
+  rows.innerHTML = "";
+
+  let balance = 0;
+
+
+  if (!transactions.length) {
+
+    rows.innerHTML =
+      '<tr><td colspan="6" class="loading">No transactions yet.</td></tr>';
+
+    $("balance").textContent = "0";
+
+    return;
+  }
+
+
+  transactions.forEach(t => {
+
+    const amount =
+      Number(t.amount) || 0;
+
+
+    if (t.type === "in") {
+      balance += amount;
+    } else {
+      balance -= amount;
+    }
+
+
+    const tr =
+      document.createElement("tr");
+
+
+    tr.innerHTML = `
+
+      <td>${escapeHtml(t.date)}</td>
+
+      <td>${escapeHtml(t.description)}</td>
+
+      <td class="in-text">
+        ${t.type === "in" ? money(amount) : ""}
+      </td>
+
+      <td class="out-text">
+        ${t.type === "out" ? money(amount) : ""}
+      </td>
+
+      <td>
+        ${money(balance)}
+      </td>
+
+      <td>
+        ${escapeHtml(t.person)}
+      </td>
+
+    `;
+
+
+    rows.appendChild(tr);
+  });
+
+
+  $("balance").textContent =
+    money(balance);
+}
+
+
+/* =========================
+   OPEN FORM
+========================= */
+
+function openTransaction(type) {
+
+  transactionType = type;
+
+  $("transactionCard")
+    .classList.remove("hidden");
+
+
+  $("formTitle").textContent =
+    type === "in"
+      ? "＋ Money In"
+      : "− Money Out";
+
+
+  $("saveBtn").textContent =
+    type === "in"
+      ? "Add Money In"
+      : "Add Money Out";
+
+
+  $("saveBtn").className =
+    type === "in"
+      ? "in-btn"
+      : "out-btn";
+
+
+  $("message").style.display =
+    "none";
+
+
+  $("amount").focus();
+
+  window.scrollTo({
+    top: $("transactionCard").offsetTop - 15,
+    behavior: "smooth"
+  });
+}
+
+
+function closeTransaction() {
+
+  $("transactionCard")
+    .classList.add("hidden");
+
+  $("transactionForm").reset();
+
+  $("date").value =
+    new Date().toISOString().slice(0,10);
+}
+
+
+/* =========================
+   SAVE TRANSACTION
+========================= */
+
+$("transactionForm")
+.addEventListener("submit", async function(e) {
+
+  e.preventDefault();
+
+
+  const payload = {
+
+    action: "addTransaction",
+
+    type: transactionType,
+
+    amount:
+      Number($("amount").value),
+
+    date:
+      $("date").value,
+
+    description:
+      $("description").value.trim(),
+
+    person:
+      $("person").value
+  };
+
+
+  if (
+    !payload.amount ||
+    payload.amount <= 0
+  ) {
+
+    alert("Please enter a valid amount.");
+
+    return;
+  }
+
+
+  const btn =
+    $("saveBtn");
+
+  btn.disabled = true;
+
+  btn.textContent =
+    "Saving...";
+
+
+  /*
+    Google Apps Script POST.
+
+    We use no-cors because the browser may not
+    allow JavaScript to read the response.
+
+    The transaction is still sent to Apps Script.
+  */
+
+  try {
+
+    await fetch(API_URL, {
+
+      method: "POST",
+
+      mode: "no-cors",
+
+      body: JSON.stringify(payload)
+
+    });
+
+
+    $("message").textContent =
+      "Saved successfully. Updating...";
+
+    $("message").style.display =
+      "block";
+
+
+    $("transactionForm").reset();
+
+    $("date").value =
+      new Date().toISOString().slice(0,10);
+
+
+    /*
+      Give Apps Script a moment to write the row,
+      then reload the data from Google Sheets.
+    */
+
+    setTimeout(async function() {
+
+      try {
+
+        await loadData();
+
+        closeTransaction();
+
+      } catch (error) {
+
+        alert(
+          "Saved, but could not refresh the table: " +
+          error.message
+        );
+      }
+
+    }, 1000);
+
+
+  } catch (error) {
+
+    alert(
+      "Could not save transaction: " +
+      error.message
+    );
+
+  } finally {
+
+    setTimeout(function() {
+
+      btn.disabled = false;
+
+      btn.textContent =
+        transactionType === "in"
+          ? "Add Money In"
+          : "Add Money Out";
+
+    }, 1200);
+  }
+
+});
+
+
+/* =========================
+   HELPERS
+========================= */
+
+function escapeHtml(value) {
+
+  return String(value ?? "")
+    .replace(/[&<>"']/g, function(c) {
+
+      return {
+
+        "&":"&amp;",
+        "<":"&lt;",
+        ">":"&gt;",
+        '"':"&quot;",
+        "'":"&#039;"
+
+      }[c];
+
+    });
+}
+
+
+/* =========================
+   START
+========================= */
+
+$("date").value =
+  new Date().toISOString().slice(0,10);
+
+
+loadData().catch(function(error) {
+
+  $("rows").innerHTML =
+    `<tr>
+      <td colspan="6" class="loading">
+        Could not load Google Sheets.
+        <br>
+        <small>${escapeHtml(error.message)}</small>
+      </td>
+    </tr>`;
+
+});
+</script>
+
+</body>
+</html>

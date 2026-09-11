@@ -100,25 +100,49 @@ const money = n => Number(n || 0).toLocaleString("en-US", {
   maximumFractionDigits: 2
 });
 
-async function loadData() {
-  try {
-    // Cache-busting query ensures we fetch the latest Products prices.
-    const response = await fetch(API_URL + "?t=" + Date.now(), { cache: "no-store" });
-    const data = await response.json();
+function loadData() {
+  return new Promise((resolve, reject) => {
+    const callbackName = "googleSheetsCallback_" + Date.now();
 
-    if (!data.success) throw new Error(data.error || "Could not load data.");
+    window[callbackName] = function(data) {
+      delete window[callbackName];
 
-    products = data.products || [];
-    shopping = data.shopping || [];
-    transactions = data.transactions || [];
+      const script = document.getElementById(callbackName);
+      if (script) script.remove();
 
-    populateProducts();
-    renderShopping();
-    updateSummary();
-  } catch (err) {
-    $("product").innerHTML = '<option value="">Could not load Google Sheets</option>';
-    $("priceSource").textContent = "Error: " + err.message;
-  }
+      if (!data.success) {
+        reject(new Error(data.error || "Google Sheets returned an error."));
+        return;
+      }
+
+      products = data.products || [];
+      shopping = data.shopping || [];
+      transactions = data.transactions || [];
+
+      populateProducts();
+      renderShopping();
+      updateSummary();
+
+      resolve(data);
+    };
+
+    const script = document.createElement("script");
+    script.id = callbackName;
+    script.src = API_URL + "?callback=" + callbackName + "&t=" + Date.now();
+    script.onerror = function() {
+      delete window[callbackName];
+      script.remove();
+      reject(new Error("Could not connect to Google Sheets."));
+    };
+
+    document.body.appendChild(script);
+  }).catch(err => {
+    $("product").innerHTML =
+      '<option value="">Could not load Google Sheets</option>';
+
+    $("priceSource").textContent = err.message;
+    console.error(err);
+  });
 }
 
 function populateProducts() {
